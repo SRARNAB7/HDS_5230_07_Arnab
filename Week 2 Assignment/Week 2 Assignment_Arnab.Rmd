@@ -1,0 +1,243 @@
+```{r}
+# Load necessary libraries
+
+library(foreach)   # constructs to create "parallelized" code
+library(doParallel) # infrastructure for executing code in a parallel mode
+library(microbenchmark) # note that the library is *NOT* named "benchmark"
+
+# NOTE: If your computer runs on Windows, please uncomment the following two lines
+ cl <- makeCluster(detectCores(), type="PSOCK")
+ registerDoParallel(cl) # only for Windows users
+
+# NOTE: If your computer runs on Windows, then comment out the following line
+registerDoParallel(cores=detectCores()) # cores = # on my computer
+getDoParWorkers() # display how many parallel "workers" have been allotted
+```
+The cores in the computer are 4.
+
+```{r}
+#1) Generate 100 bootstrapped sample of subsets of rows from the Boston dataset and fit a GLM on each of the samples. Perform this serially, that is, fitting of the model on the second bootstrapped sample should happen after the first model has been fit. Use medv as the outcome (which means, you would be fitting regression GLMs).
+#For each of the model, extract the (or a) statistic that represents model fit.
+
+# Load necessary library
+library(MASS) 
+
+# Function to Perform Serial Bootstrapped GLM Fitting
+run_serial_glm <- function() {
+  
+  set.seed(123) # Setting the seed for reproducibility
+  
+  data("Boston") # Loading the Boston dataset
+  
+  n_samples <- 100 # Number of bootstrap samples
+  
+  model_fit_statistics <- numeric(n_samples)  # Initializing a vector to store the AIC values
+  
+  # Serial execution for fitting a GLM on each bootstrapped sample and extract AIC
+  for (i in 1:n_samples) {
+    # Creating a bootstrapped sample with replacement
+    boot_sample <- Boston[sample(1:nrow(Boston), replace = TRUE), ]
+    
+    # Fitting a GLM with 'medv' as the outcome variable
+    model <- glm(medv ~ ., data = boot_sample, family = gaussian)
+    
+    # Extracting AIC value and store it
+    model_fit_statistics[i] <- AIC(model)
+    
+  }
+  
+  # Returning raw AIC values
+  return(model_fit_statistics)
+}
+
+serial_results <- run_serial_glm()
+```
+In the above function, for each of the model,  the (or a) statistic that represents model fit is extracted.
+
+```{r}
+#2 Aggregate the model fit statistics across the 100 bootstrapped samples and plot the results. Additionally compute the mean and inter-quartile range values for these test statistics.
+
+# Function to compute Mean & IQR
+compute_AIC_statistics <- function(AIC_values) {
+  mean_AIC <- mean(AIC_values)
+  iqr_AIC <- IQR(AIC_values)
+  
+  cat("\nSummary of Model Fit Statistics (AIC):\n")
+  cat("Mean AIC:", mean_AIC, "\n")
+  cat("Interquartile Range (IQR) of AIC:", iqr_AIC, "\n")
+  
+  return(list(Mean_AIC = mean_AIC, IQR_AIC = iqr_AIC))
+}
+
+AIC_stats <- compute_AIC_statistics(serial_results)
+```
+An AIC of 2987.725 reflects the average fit of the GLMs to the bootstrapped datasets.
+
+The IQR of 94.02 indicates some variability in model performance across bootstrapped samples, which is expected due to the randomness of re-sampling.
+
+```{r}
+# Function to Plot Histogram and Boxplot with Mean & IQR
+plot_AIC_distribution <- function(AIC_values) {
+  # Compute Mean and IQR
+  mean_AIC <- mean(AIC_values)
+  lower_IQR <- quantile(AIC_values, 0.25)  # 25th percentile
+  upper_IQR <- quantile(AIC_values, 0.75)  # 75th percentile
+  
+  par(mfrow = c(1, 2))  # Side-by-side plots
+  
+  # Histogram
+  hist(
+    AIC_values,
+    main = "Distribution of AIC Values",
+    xlab = "AIC",
+    col = "skyblue",
+    border = "black",
+    breaks = 15
+  )
+  # Adding mean line (red)
+  abline(v = mean_AIC, col = "red", lwd = 2, lty = 2)  
+  # Adding IQR lines (green)
+  abline(v = lower_IQR, col = "green", lwd = 2, lty = 3)  
+  abline(v = upper_IQR, col = "green", lwd = 2, lty = 3)  
+  legend("topright", legend = c("Mean", "IQR Range"), col = c("red", "green"), lwd = 2, lty = c(2, 3))
+
+  # Boxplot
+  boxplot(
+    AIC_values,
+    main = "Boxplot of AIC Values",
+    ylab = "AIC",
+    col = "lightgreen"
+  )
+  # Add mean line (red)
+  points(mean_AIC, col = "red", pch = 19, cex = 1.5)  # Representing Mean as a red dot
+  # Add IQR lines
+  abline(h = lower_IQR, col = "green", lwd = 2, lty = 3)  
+  abline(h = upper_IQR, col = "green", lwd = 2, lty = 3)  
+
+  # Resetting plot layout
+  par(mfrow = c(1, 1))
+}
+
+# Plotting AIC distribution
+plot_AIC_distribution(serial_results)
+```
+Interpretation from the Histogram- 
+The AIC values are approximately normally distributed.
+The red dashed line represents the Mean AIC (2987.725), indicating the average fit across all models.
+The green dashed lines mark the IQR bounds (25th and 75th percentiles), indicating where the middle 50% of the AIC values fall.
+Most AIC values are concentrated around 2950 to 3050, with few outliers.
+
+Interpretation from the Boxplot- 
+The box shows the central 50% of AIC values fall within the IQR (around 2950 to 3050).
+There are no apparent outliers beyond the whiskers.
+The red dot (Mean AIC) is close to the median, indicating symmetry in the distribution.
+
+
+```{r}
+#4 Next, repeat steps 1 - 3 by executing them in parallel. For the sake of replicability, be sure to generate the same bootstrapped samples across these two sets of model-fitting operations (i.e., set a seed, and start from it for both serial and parallel generation of samples and the subsequent steps).
+
+# Function to Perform Parallel Bootstrapped GLM Fitting and Extract AIC
+run_parallel_glm_with_aic <- function() {
+
+  set.seed(123)
+  data("Boston")
+  n_samples <- 100
+
+  # Generating the same bootstrapped sample indices as in serial execution
+  bootstrap_indices <- lapply(1:n_samples, function(i) sample(1:nrow(Boston), replace = TRUE))
+
+  #Function to fit GLM on a bootstrapped sample
+  fit_glm_on_sample <- function(indices, data) {
+    sample_data <- data[indices, ]  # Subset dataset using precomputed indices
+    glm(medv ~ ., data = sample_data, family = gaussian)  # Fit GLM model
+  }
+
+  # Executing GLM fitting in parallel
+  glm_models_parallel <- foreach(i = 1:n_samples, .packages = "MASS") %dopar% {
+    fit_glm_on_sample(bootstrap_indices[[i]], Boston)
+  }
+
+  # Extract AIC values from fitted models
+  aic_values_parallel <- sapply(glm_models_parallel, AIC)
+
+  return(aic_values_parallel)   # Returning AIC values
+}
+
+parallel_aic_results <- run_parallel_glm_with_aic() # Running the function
+```
+
+In the above function extract the AIC values and fit the models.
+
+```{r}
+# Function to compute Mean & IQR
+
+compute_AIC_statistics_parallel <- function(aic_values_parallel) {
+  mean_AIC <- mean(aic_values_parallel)
+  iqr_AIC <- IQR(aic_values_parallel)
+  
+  cat("\nSummary of Model Fit Statistics (AIC):\n")
+  cat("Mean AIC:", mean_AIC, "\n")
+  cat("Interquartile Range (IQR) of AIC:", iqr_AIC, "\n")
+  
+  return(list(Mean_AIC = mean_AIC, IQR_AIC = iqr_AIC))
+}
+compute_AIC_statistics(aic_values_parallel)
+```
+We can see that the values for the Serial and Parallel Execution, the values of the Mean and IQR are same for the 100 bootstrapped samples.
+
+
+```{r}
+# Function to Plot Histogram and Boxplot with Mean & IQR
+plot_AIC_distribution <- function(aic_values_parallel) {
+  mean_AIC <- mean(aic_values_parallel)
+  lower_IQR <- quantile(aic_values_parallel, 0.25)  
+  upper_IQR <- quantile(aic_values_parallel, 0.75)  
+
+  par(mfrow = c(1, 2))  
+
+  # Histogram
+  hist(
+    aic_values_parallel,
+    main = "Distribution of AIC Values",
+    xlab = "AIC",
+    col = "skyblue",
+    border = "black",
+    breaks = 15
+  )
+  abline(v = mean_AIC, col = "red", lwd = 2, lty = 2)  
+  abline(v = lower_IQR, col = "green", lwd = 2, lty = 3)  
+  abline(v = upper_IQR, col = "green", lwd = 2, lty = 3)  
+  legend("topright", legend = c("Mean", "IQR Range"), col = c("red", "green"), lwd = 2, lty = c(2, 3))
+
+  # Boxplot
+  boxplot(
+    aic_values_parallel,
+    main = "Boxplot of AIC Values",
+    ylab = "AIC",
+    col = "lightgreen"
+  )
+  points(mean_AIC, col = "red", pch = 19, cex = 1.5)  
+  abline(h = lower_IQR, col = "green", lwd = 2, lty = 3)  
+  abline(h = upper_IQR, col = "green", lwd = 2, lty = 3)  
+
+  par(mfrow = c(1, 1))
+}
+
+plot_AIC_distribution(aic_values_parallel)
+
+```
+
+The graphs are mostly identical for the Serial and Parallel Execution.
+```{r}
+#5.2 Compare the results of serial and parallel execution are the execution times for the serial and parallel approaches same or different
+
+# Comparing Execution Times
+microbenchmark(
+  run_serial_glm(),
+  run_parallel_glm_with_aic(),
+  times=100
+)
+```
+Interpretation- 
+Surprisingly, parallel execution took longer than serial execution.
+The overhead of setting up and managing parallel processes likely outweighed the benefits of parallel computation.
