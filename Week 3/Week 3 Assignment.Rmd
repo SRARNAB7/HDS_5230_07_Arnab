@@ -1,0 +1,107 @@
+
+
+```{r}
+# Installing and loading the necessary package
+install.packages("readxl")  # Installing if not already installed
+library(readxl)  # Loading the package
+
+# Reading  the file 
+df <- read_excel("clinics.xls")
+
+head(df)
+```
+
+
+```{r}
+# Defining the Haversine function
+haversine <- function(lat1, lon1, lat2, lon2) {
+  miles_constant <- 3959  # Earth radius in miles
+  # Converting degrees to radians
+  lat1 <- deg2rad(lat1)
+  lon1 <- deg2rad(lon1)
+  lat2 <- deg2rad(lat2)
+  lon2 <- deg2rad(lon2)
+  
+  # Computing the differences
+  dlat <- lat2 - lat1
+  dlon <- lon2 - lon1
+  
+  # Haversine formula
+  a <- sin(dlat / 2)^2 + cos(lat1) * cos(lat2) * sin(dlon / 2)^2
+  c <- 2 * asin(sqrt(a))
+  
+  mi <- miles_constant * c  # Computing the distance
+  return(mi)
+}
+
+# Function to convert degrees to radians
+deg2rad <- function(deg) {
+  return(deg * (pi / 180))
+}
+
+```
+
+```{r}
+# Define the function that loops through all rows(For Loop Approach)
+df$locLat <- as.numeric(df$locLat)
+df$locLong <- as.numeric(df$locLong)
+haversine_looping <- function(df) {
+
+  distance_list <- numeric(nrow(df))  # Initializing an empty vector
+  
+  for (i in 1:nrow(df)) {
+    distance_list[i] <- haversine(40.671, -73.985, df$locLat[i], df$locLong[i])
+  }
+  
+  return(distance_list)
+}
+```
+
+```{r}
+install.packages("microbenchmark") #Installing the package
+```
+
+```{r}
+library(microbenchmark) # Loading the package
+```
+
+
+
+```{r}
+benchmark_results <- microbenchmark(
+  haversine_looping(df),  # Running the function
+  times = 10  # Number of iterations for benchmarking
+)
+
+# Printing the benchmark results
+print(benchmark_results)
+```
+
+```{r}
+
+# Approach 2- Running microbenchmark for mapply().Allows to work with multiple vectors or lists simultaneously.
+benchmark_results <- microbenchmark(
+  df$distance <- mapply(haversine, 40.671, -73.985, df$locLat, df$locLong),
+  times = 10  # Run 10 iterations
+)
+
+# Printing the benchmark results
+print(benchmark_results)
+```
+
+```{r}
+# Benchmark the vectorized Haversine function
+benchmark_results <- microbenchmark(
+  df$distance <- haversine(40.671, -73.985, df$locLat, df$locLong),
+  times = 10  # Running the test 10 times
+)
+
+# Printing benchmark results
+print(benchmark_results)
+```
+
+
+
+
+
+
