@@ -45,37 +45,37 @@ def haversine_looping(df):
 cProfile.run("df['distance'] = haversine_looping(df)")
 
 # Commented out IPython magic to ensure Python compatibility.
-# # vectorize code by using series and iterrows
-# # Haversine applied on rows via iteration
-# %%timeit
-# haversine_series = []
-# for index, row in df.iterrows():
-#     haversine_series.append(haversine(40.671, -73.985, row['locLat'], row['locLong']))
-# #cProfile.run("df['distance'] = haversine_series")
-# df['distance'] = haversine_series
+# vectorize code by using series and iterrows
+# Haversine applied on rows via iteration
+ %%timeit
+ haversine_series = []
+ for index, row in df.iterrows():
+     haversine_series.append(haversine(40.671, -73.985, row['locLat'], row['locLong']))
+ #cProfile.run("df['distance'] = haversine_series")
+ df['distance'] = haversine_series
 
 """# Optimize further
 
 """
 
 # Commented out IPython magic to ensure Python compatibility.
-# # Timing apply on the Haversine function
-# %%timeit
-# df['distance'] = df.apply(lambda row: haversine(40.671, -73.985, row['locLat'], row['locLong']), \
-#                           axis=1)
+# Timing apply on the Haversine function
+ %%timeit
+ df['distance'] = df.apply(lambda row: haversine(40.671, -73.985, row['locLat'], row['locLong']), \
+                           axis=1)
 
 # Commented out IPython magic to ensure Python compatibility.
-# %%timeit
-# # Vectorized implementation of Haversine applied on Pandas series
-# df['distance'] = haversine(40.671, -73.985, df['locLat'], df['locLong'])
+ %%timeit
+ # Vectorized implementation of Haversine applied on Pandas series
+ df['distance'] = haversine(40.671, -73.985, df['locLat'], df['locLong'])
 
 cProfile.run("df['distance'] = haversine(40.671, -73.985, df['locLat'], df['locLong'])")
 
-# Commented out IPython magic to ensure Python compatibility.
-# %%timeit
-# # Vectorized implementation of Haversine applied on NumPy arrays
-# df['distance'] = haversine(40.671, -73.985, df['locLat'].values, df['locLong'].values)
-# 
-#
+
+ %%timeit
+ # Vectorized implementation of Haversine applied on NumPy arrays
+ df['distance'] = haversine(40.671, -73.985, df['locLat'].values, df['locLong'].values)
+ 
+
 
 cProfile.run("df['distance'] = haversine(40.671, -73.985, df['locLat'].values, df['locLong'].values)")
